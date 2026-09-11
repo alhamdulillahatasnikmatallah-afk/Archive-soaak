@@ -1,0 +1,95 @@
+name: Build NanzMusify APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Find ZIP
+        run: |
+          ZIP=$(find . -maxdepth 2 -type f -name "*.zip" | head -n 1)
+          if [ -z "$ZIP" ]; then
+            echo "ZIP NanzMusify tidak ditemukan."
+            exit 1
+          fi
+          echo "ZIP ditemukan: $ZIP"
+          echo "ZIP_PATH=$ZIP" >> "$GITHUB_ENV"
+
+      - name: Extract ZIP
+        run: |
+          rm -rf build-project
+          mkdir build-project
+          unzip -q "$ZIP_PATH" -d build-project
+
+          echo "Isi hasil extract:"
+          find build-project -maxdepth 3 -type f | head -100
+
+      - name: Locate Gradle Project
+        run: |
+          SETTINGS=$(find build-project -type f \( \
+            -name "settings.gradle" \
+            -o -name "settings.gradle.kts" \
+          \) | head -n 1)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "settings.gradle(.kts) tidak ditemukan."
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+
+          echo "Gradle project ditemukan:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.6.1"
+
+      - name: Build Debug APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          gradle :app:assembleDebug \
+            --no-daemon \
+            --stacktrace
+
+      - name: Build Release APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          gradle :app:assembleRelease \
+            --no-daemon \
+            --stacktrace
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NanzMusify-Debug
+          path: "**/app/build/outputs/apk/debug/*.apk"
+          if-no-files-found: error
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NanzMusify-Release
+          path: "**/app/build/outputs/apk/release/*.apk"
+          if-no-files-found: error
